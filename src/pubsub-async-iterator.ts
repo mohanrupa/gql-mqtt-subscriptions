@@ -38,8 +38,12 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
   private allSubscribed: Promise<number[]>;
   private listening: boolean;
   private pubsub: PubSubEngine;
+  // This function must be pure, it must return 
+  // same output for a specific input irrespectively.
+  private extractMessage: (any) => any;
 
-  constructor(pubsub: PubSubEngine, eventNames: string | string[]) {
+  constructor(pubsub: PubSubEngine, eventNames: string | string[], extractMessage: (any) => any) {
+    this.extractMessage = extractMessage;
     this.pubsub = pubsub;
     this.pullQueue = [];
     this.pushQueue = [];
@@ -54,8 +58,9 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
   }
 
   public async return() {
+    const self = this;
     this.emptyQueue(await this.allSubscribed);
-    return { value: undefined, done: true };
+    return { value: self.extractMessage(undefined), done: true };
   }
 
   public async throw(error) {
@@ -69,10 +74,11 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
 
   private async pushValue(event) {
     await this.allSubscribed;
+    const self = this;
     if (this.pullQueue.length !== 0) {
-      this.pullQueue.shift()({ value: event, done: false });
+      this.pullQueue.shift()({ value: self.extractMessage(event), done: false });
     } else {
-      this.pushQueue.push(event);
+      this.pushQueue.push(self.extractMessage(event));
     }
   }
 
@@ -88,9 +94,10 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
 
   private emptyQueue(subscriptionIds: number[]) {
     if (this.listening) {
+      const self = this;
       this.listening = false;
       this.unsubscribeAll(subscriptionIds);
-      this.pullQueue.forEach(resolve => resolve({ value: undefined, done: true }));
+      this.pullQueue.forEach(resolve => resolve({ value: self.extractMessage(undefined), done: true }));
       this.pullQueue.length = 0;
       this.pushQueue.length = 0;
     }

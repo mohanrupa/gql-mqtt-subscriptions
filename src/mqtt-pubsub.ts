@@ -148,8 +148,9 @@ export class MQTTPubSub implements PubSubEngine {
     delete this.subscriptionMap[subId];
   }
 
-  public asyncIterator<T>(triggers: string | string[]): AsyncIterator<T> {
-    return new PubSubAsyncIterator<T>(this, triggers);
+  public asyncIterator<T>(triggers: string | string[], extractMessage?: (any) => any): AsyncIterator<T> {
+    let defaultExtractMessage: (any) => any = (event) => event; 
+    return new PubSubAsyncIterator<T>(this, triggers, extractMessage || defaultExtractMessage);
   }
 
   private onMessage(topic: string, message: Buffer) {
