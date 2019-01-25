@@ -11,6 +11,7 @@ export interface PubSubMQTTOptions {
   onMQTTSubscribe?: (id: number, granted: ISubscriptionGrant[]) => void;
   triggerTransform?: TriggerTransform;
   parseMessageWithEncoding?: string;
+  dynamicSubscription?: IDynamicSubscription;
 }
 
 export class MQTTPubSub implements PubSubEngine {
@@ -24,6 +25,8 @@ export class MQTTPubSub implements PubSubEngine {
   private subsRefsMap: { [trigger: string]: Array<number> };
   private currentSubscriptionId: number;
   private parseMessageWithEncoding: string;
+  private dynamicSubscription: IDynamicSubscription;
+  private newTopicListener: Function;
 
   private static matches(pattern: string, topic: string) {
     const patternSegments = pattern.split('/');
@@ -75,6 +78,14 @@ export class MQTTPubSub implements PubSubEngine {
     this.publishOptionsResolver = options.publishOptions || (() => Promise.resolve({} as IClientPublishOptions));
     this.subscribeOptionsResolver = options.subscribeOptions || (() => Promise.resolve({} as IClientSubscribeOptions));
     this.parseMessageWithEncoding = options.parseMessageWithEncoding;
+    this.dynamicSubscription = options.dynamicSubscription || {enabled : false};
+    this.newTopicListener = () => {};
+  }
+
+  public addEventListener(event: 'new-topic', fn?: (topic: string, ds: IDynamicSubscription) => any) : void {
+    if (event === 'new-topic') {
+      this.newTopicListener = fn;
+    }
   }
 
   public publish(trigger: string, payload: any): boolean {
@@ -153,7 +164,18 @@ export class MQTTPubSub implements PubSubEngine {
     return new PubSubAsyncIterator<T>(this, triggers, extractMessage || defaultExtractMessage);
   }
 
-  private onMessage(topic: string, message: Buffer) {
+  private async onMessage(topic: string, message: Buffer) {
+    let matchingKeys = [].concat(
+      ...Object.keys(this.subsRefsMap)
+      .filter((key) => MQTTPubSub.matches(key, topic)));
+
+    if (this.dynamicSubscription.enabled) {
+      // if there are no matching keys
+      if (matchingKeys.length === 0) {
+        await this.newTopicListener(topic);
+      }
+    }
+
     const subscribers = [].concat(
         ...Object.keys(this.subsRefsMap)
         .filter((key) => MQTTPubSub.matches(key, topic))
@@ -185,3 +207,4 @@ export type TriggerTransform = (trigger: Trigger, channelOptions?: Object) => st
 export type SubscribeOptionsResolver = (trigger: Trigger, channelOptions?: Object) => Promise<IClientSubscribeOptions>;
 export type PublishOptionsResolver = (trigger: Trigger, payload: any) => Promise<IClientPublishOptions>;
 export type SubscribeHandler = (id: number, granted: ISubscriptionGrant[]) => void;
+export type IDynamicSubscription = { enabled: boolean };

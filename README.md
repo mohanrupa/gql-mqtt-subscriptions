@@ -1,4 +1,4 @@
-# graphql-mqtt-subscriptions
+# gql-mqtt-subscriptions
 
 This package implements the PubSubEngine Interface from the graphql-subscriptions package. 
 It allows you to connect your subscriptions manager to an MQTT enabled Pub Sub broker to support 
@@ -16,6 +16,28 @@ const subscriptionManager = new SubscriptionManager({
   pubsub,
   setupFunctions: {},
 });
+```
+
+## Using Dynamic Subscription
+
+When you don't have all of your clients using graphql, you might want to subscribe users using REST APIs on the MQTT broker. In that case, topics 
+subscribed by asyncIterator must change even when the graphql websocket connection is alive.
+
+By using below code, if a client subscribes to different topics, you will start receiving messages for that topic even though it wasn't in your list of
+topics on asyncIterator.
+
+```javascript
+const pubsub = new MQTTPubSub({
+    client: mqttClient // client with clientId=test
+    dynamicSubscription: {enabled: true}
+});
+
+// In resolvers, you only subscribe to topic 'Hello/World'
+pubsub.asyncIterator(['Hello/World']);
+
+// Let's say you subscribed clientId=test to topic 'Hi/World'
+// by directly accessing the MQTT Broker, you should start receiving 
+// messages published to 'Hi/World' without even reconnecting.
 ```
 
 ## Using Trigger Transform

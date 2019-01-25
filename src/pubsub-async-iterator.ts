@@ -1,5 +1,5 @@
 import { $$asyncIterator } from 'iterall';
-import { PubSubEngine } from 'graphql-subscriptions/dist/pubsub-engine';
+import { MQTTPubSub, IDynamicSubscription } from './mqtt-pubsub';
 
 /**
  * A class for digesting PubSubEngine events via the new AsyncIterator interface.
@@ -37,19 +37,22 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
   private eventsArray: string[];
   private allSubscribed: Promise<number[]>;
   private listening: boolean;
-  private pubsub: PubSubEngine;
+  private pubsub: MQTTPubSub;
+  private subscribedPromises: Promise<number>[];
   // This function must be pure, it must return 
   // same output for a specific input irrespectively.
   private extractMessage: (any) => any;
 
-  constructor(pubsub: PubSubEngine, eventNames: string | string[], extractMessage: (any) => any) {
+  constructor(pubsub: MQTTPubSub, eventNames: string | string[], extractMessage: (any) => any) {
     this.extractMessage = extractMessage;
     this.pubsub = pubsub;
     this.pullQueue = [];
     this.pushQueue = [];
     this.listening = true;
     this.eventsArray = typeof eventNames === 'string' ? [eventNames] : eventNames;
-    this.allSubscribed = this.subscribeAll();
+    this.pubsub.addEventListener('new-topic', this.newTopicListener.bind(this));
+    this.subscribedPromises = this.subscribeAll();
+    this.allSubscribed = Promise.all(this.subscribedPromises);
   }
 
   public async next() {
@@ -70,6 +73,14 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
 
   public [$$asyncIterator]() {
     return this;
+  }
+
+  private async newTopicListener(eventName: string, ds: IDynamicSubscription): Promise<void> {
+    if (ds.enabled) {
+      this.subscribedPromises.push(this.pubsub.subscribe(eventName, this.pushValue.bind(this), {}));
+      this.allSubscribed = Promise.all(this.subscribedPromises);
+      await this.allSubscribed;
+    }
   }
 
   private async pushValue(event) {
@@ -104,9 +115,9 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
   }
 
   private subscribeAll() {
-    return Promise.all(this.eventsArray.map(
+    return this.eventsArray.map(
         eventName => this.pubsub.subscribe(eventName, this.pushValue.bind(this), {}),
-    ));
+    );
   }
 
   private unsubscribeAll(subscriptionIds: number[]) {
