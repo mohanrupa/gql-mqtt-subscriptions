@@ -172,7 +172,7 @@ export class MQTTPubSub implements PubSubEngine {
     if (this.dynamicSubscription.enabled) {
       // if there are no matching keys
       if (matchingKeys.length === 0) {
-        await this.newTopicListener(topic);
+        await this.newTopicListener(topic, this.dynamicSubscription);
       }
     }
 
