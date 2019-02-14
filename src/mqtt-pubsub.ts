@@ -28,7 +28,7 @@ export class MQTTPubSub implements PubSubEngine {
   private dynamicSubscription: IDynamicSubscription;
   private newTopicListener: Function;
 
-  private static matches(pattern: string, topic: string) {
+  public static matches(pattern: string, topic: string) {
     const patternSegments = pattern.split('/');
     const topicSegments = topic.split('/');
     const patternLength = patternSegments.length;
@@ -159,9 +159,10 @@ export class MQTTPubSub implements PubSubEngine {
     delete this.subscriptionMap[subId];
   }
 
-  public asyncIterator<T>(triggers: string | string[], extractMessage?: (any) => any): AsyncIterator<T> {
+  public asyncIterator<T>(triggers: string | string[], extractMessage?: (any) => any, 
+            supportedTopicFilterFor?: (string) => Promise<string | null>): AsyncIterator<T> {
     let defaultExtractMessage: (any) => any = (event) => event; 
-    return new PubSubAsyncIterator<T>(this, triggers, extractMessage || defaultExtractMessage);
+    return new PubSubAsyncIterator<T>(this, triggers, extractMessage || defaultExtractMessage, supportedTopicFilterFor);
   }
 
   private async onMessage(topic: string, message: Buffer) {

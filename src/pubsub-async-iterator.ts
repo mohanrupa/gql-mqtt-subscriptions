@@ -29,6 +29,13 @@ import { MQTTPubSub, IDynamicSubscription } from './mqtt-pubsub';
  *
  * @property pubsub @type {PubSubEngine}
  * The PubSubEngine whose events will be observed.
+ * 
+ * @property supportedTopicFilterFor @type {Function}
+ * This is used when dynamic subscription is enabled for the pub-sub engine. For example, your client is only allowed
+ * to subscribe to '/World/#', but you received a message to a topic 'World/Hello'. Obviously, you don't want to subscribe
+ * to 'World/Hello' as it will make your life harder to keep track of subscriptions. Hence, you return a supported topicFilter 
+ * as 'World/#' to which we need to subscribe. If not specified, any topic will be subscribed and it's your responsibility to
+ * keep track of what you've subscribed. If you return null, no topic will be subscribed and message will be ignored. 
  */
 export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
 
@@ -42,8 +49,10 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
   // This function must be pure, it must return 
   // same output for a specific input irrespectively.
   private extractMessage: (any) => any;
+  private supportedTopicFilterFor: Function
 
-  constructor(pubsub: MQTTPubSub, eventNames: string | string[], extractMessage: (any) => any) {
+  constructor(pubsub: MQTTPubSub, eventNames: string | string[], 
+    extractMessage: (any) => any, supportedTopicFilterFor?: ((string) => Promise<string | null>)) {
     this.extractMessage = extractMessage;
     this.pubsub = pubsub;
     this.pullQueue = [];
@@ -53,6 +62,7 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
     this.pubsub.addEventListener('new-topic', this.newTopicListener.bind(this));
     this.subscribedPromises = this.subscribeAll();
     this.allSubscribed = Promise.all(this.subscribedPromises);
+    this.supportedTopicFilterFor = supportedTopicFilterFor || (async (topic) => topic);
   }
 
   public async next() {
@@ -77,7 +87,11 @@ export class PubSubAsyncIterator<T> implements AsyncIterator<T> {
 
   private async newTopicListener(eventName: string, ds: IDynamicSubscription): Promise<void> {
     if (ds.enabled) {
-      this.subscribedPromises.push(this.pubsub.subscribe(eventName, this.pushValue.bind(this), {}));
+      let newSupportedEventName: string | null = await this.supportedTopicFilterFor(eventName);
+      if (newSupportedEventName === null || typeof newSupportedEventName !== 'string') {
+        return;
+      }
+      this.subscribedPromises.push(this.pubsub.subscribe(newSupportedEventName, this.pushValue.bind(this), {}));
       this.allSubscribed = Promise.all(this.subscribedPromises);
       await this.allSubscribed;
     }
