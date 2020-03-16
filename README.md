@@ -40,6 +40,21 @@ pubsub.asyncIterator(['Hello/World']);
 // messages published to 'Hi/World' without even reconnecting.
 ```
 
+## Disabling subscribe/unsubscribe
+
+For some application, you might need to subscribe a `clientId` to a particular topic once when `clientId` is added to the group and unsubscribe only when the `clientId` leaves the group. To support this use-case, you directly connect to your broker to subscribe the `clientId` once and receive messages directly without even subscribing in this async iterator. However, you should enable dynamicSubscription option to get the benefit of this option.
+
+```javascript
+const pubsub = new MQTTPubSub({
+    client: mqttClient // client with clientId=test
+    dynamicSubscription: {enabled: true},
+    handleSubscription: {canSubscribe: () => false, canUnsubscribe: () => false}
+});
+
+// In resolvers, you don't need to subscribe to any topics as it will be done external to your application.
+pubsub.asyncIterator([]);
+```
+
 ## Using Trigger Transform
 
 As the [graphql-redis-subscriptions](https://github.com/davidyaha/graphql-redis-subscriptions) package, this package support

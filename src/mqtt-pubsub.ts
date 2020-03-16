@@ -12,6 +12,7 @@ export interface PubSubMQTTOptions {
   triggerTransform?: TriggerTransform;
   parseMessageWithEncoding?: string;
   dynamicSubscription?: IDynamicSubscription;
+  handleSubscription?: IHandleSubscription; 
 }
 
 export class MQTTPubSub implements PubSubEngine {
@@ -27,6 +28,7 @@ export class MQTTPubSub implements PubSubEngine {
   private parseMessageWithEncoding: string;
   private dynamicSubscription: IDynamicSubscription;
   private newTopicListener: Function;
+  private handleSubscription: IHandleSubscription;
 
   public static matches(pattern: string, topic: string) {
     const patternSegments = pattern.split('/');
@@ -78,8 +80,9 @@ export class MQTTPubSub implements PubSubEngine {
     this.publishOptionsResolver = options.publishOptions || (() => Promise.resolve({} as IClientPublishOptions));
     this.subscribeOptionsResolver = options.subscribeOptions || (() => Promise.resolve({} as IClientSubscribeOptions));
     this.parseMessageWithEncoding = options.parseMessageWithEncoding;
-    this.dynamicSubscription = options.dynamicSubscription || {enabled : false};
+    this.dynamicSubscription = options.dynamicSubscription || { enabled : false };
     this.newTopicListener = () => {};
+    this.handleSubscription = options.handleSubscription || { canSubscribe: () => true, canUnsubscribe: () => true }
   }
 
   public addEventListener(event: 'new-topic', fn?: (topic: string, ds: IDynamicSubscription) => any) : void {
@@ -110,27 +113,37 @@ export class MQTTPubSub implements PubSubEngine {
 
     } else {
       return new Promise<number>((resolve, reject) => {
-        // 1. Resolve options object
-        this.subscribeOptionsResolver(trigger, options).then(subscriptionOptions => {
+        let can = this.handleSubscription.canSubscribe(trigger);
+        if (can) {
+          // 1. Resolve options object
+          this.subscribeOptionsResolver(trigger, options).then(subscriptionOptions => {
 
-          // 2. Subscribing using MQTT
-          this.mqttConnection.subscribe(triggerName, { qos: 0, ...subscriptionOptions }, (err, granted) => {
-            if (err) {
-              reject(err);
-            } else {
+            // 2. Subscribing using MQTT
+            this.mqttConnection.subscribe(triggerName, { qos: 0, ...subscriptionOptions }, (err, granted) => {
+              if (err) {
+                reject(err);
+              } else {
+  
+                // 3. Saving the new sub id
+                const subscriptionIds = this.subsRefsMap[triggerName] || [];
+                this.subsRefsMap[triggerName] = [...subscriptionIds, id];
+  
+                // 4. Resolving the subscriptions id to the Subscription Manager
+                resolve(id);
+  
+                // 5. Notify implementor on the subscriptions ack and QoS
+                this.onMQTTSubscribe(id, granted);
+              }
+            });
+          }).catch(err => reject(err));
+        } else {
+          let id = Math.random();
+          // Saving the new sub id
+          const subscriptionIds = this.subsRefsMap[triggerName] || [];
+          this.subsRefsMap[triggerName] = [...subscriptionIds, id];
 
-              // 3. Saving the new sub id
-              const subscriptionIds = this.subsRefsMap[triggerName] || [];
-              this.subsRefsMap[triggerName] = [...subscriptionIds, id];
-
-              // 4. Resolving the subscriptions id to the Subscription Manager
-              resolve(id);
-
-              // 5. Notify implementor on the subscriptions ack and QoS
-              this.onMQTTSubscribe(id, granted);
-            }
-          });
-        }).catch(err => reject(err));
+          resolve(id);
+        }
       });
     }
   }
@@ -145,7 +158,11 @@ export class MQTTPubSub implements PubSubEngine {
 
     let newRefs;
     if (refs.length === 1) {
-      this.mqttConnection.unsubscribe(triggerName);
+      let can = this.handleSubscription.canUnsubscribe(triggerName);
+      if (can) {
+        this.mqttConnection.unsubscribe(triggerName);
+      }
+      
       newRefs = [];
 
     } else {
@@ -209,3 +226,4 @@ export type SubscribeOptionsResolver = (trigger: Trigger, channelOptions?: Objec
 export type PublishOptionsResolver = (trigger: Trigger, payload: any) => Promise<IClientPublishOptions>;
 export type SubscribeHandler = (id: number, granted: ISubscriptionGrant[]) => void;
 export type IDynamicSubscription = { enabled: boolean };
+export type IHandleSubscription = { canSubscribe: (topic: string) => boolean, canUnsubscribe: (topic: string) => boolean };
