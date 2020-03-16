@@ -137,7 +137,6 @@ export class MQTTPubSub implements PubSubEngine {
             });
           }).catch(err => reject(err));
         } else {
-          let id = Math.random();
           // Saving the new sub id
           const subscriptionIds = this.subsRefsMap[triggerName] || [];
           this.subsRefsMap[triggerName] = [...subscriptionIds, id];
